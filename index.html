@@ -1,80 +1,166 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Solana Testnet Wallet Generator</title>
+    <style>
+      .spinner {
+        margin: 1px auto;
+        width: 10px;
+        height: 10px;
+        border: 5px solid #f3f3f3;
+        border-top: 5px solid #3498db;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        display: none;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      #fundButton {
+        display: none;
+        align-items: center;
+      }
+
+      #syncButton {
+        display: none;
+        align-items: center;
+      }
+    </style>
     <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
-</head>
-<body>
+  </head>
+  <body>
     <h1>Solana Testnet Wallet Generator</h1>
-    <button onclick="generateAndDisplayWallet()">Generate New Testnet Wallet</button>
+    <p>You can use the generated wallet to test faucets</p>
+    <label for="network">Network:</label>
+    <select name="network" id="network">
+      <option value="devnet">Devnet</option>
+      <option value="testnet">Testnet</option>
+    </select>
+    <button onclick="generateAndDisplayWallet()">Generate Wallet</button>
     <div id="walletInfo"></div>
-    <button id="fundButton" style="display:none;" onclick="fundWallet()">Fund Wallet (2 SOL)</button>
+    <button id="fundButton" onclick="fundWallet()">
+      <div class="spinner"></div>
+      Fund Wallet (+0.5 SOL)
+    </button>
     <div id="balanceInfo"></div>
+    <button id="syncButton" onclick="syncTransactionHistory()">
+      <div class="spinner"></div>
+      Sync Transaction History
+    </button>
     <h3>Transaction History:</h3>
     <ul id="transactionList"></ul>
-
     <script>
-        let currentWallet;
-        let connection;
+      let currentWallet;
+      let connection;
 
-        async function generateAndDisplayWallet() {
-            connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl('testnet'), 'confirmed');
-            currentWallet = solanaWeb3.Keypair.generate();
-            const publicKey = currentWallet.publicKey.toString();
-            const secretKey = Array.from(currentWallet.secretKey)
-                .map(b => b.toString(16).padStart(2, '0'))
-                .join('');
+      const networkSelector = document.getElementById("network");
+      const transactionList = document.getElementById("transactionList");
+      const balanceInfo = document.getElementById("balanceInfo");
+      const walletInfo = document.getElementById("walletInfo");
+      const fundButton = document.getElementById("fundButton");
+      const fundSpinner = document.querySelector("#fundButton .spinner");
+      const syncButton = document.getElementById("syncButton");
+      const syncSpinner = document.querySelector("#syncButton .spinner ");
 
-            document.getElementById('walletInfo').innerHTML = `
-                <p>Public Key: ${publicKey}</p>
-                <p>Secret Key: ${secretKey}</p>
-                <p>Network: Testnet</p>
-            `;
+      async function generateAndDisplayWallet() {
+        balanceInfo.innerHTML = "";
+        transactionList.innerHTML = "";
+        connection = new solanaWeb3.Connection(
+          solanaWeb3.clusterApiUrl(networkSelector.value),
+          "confirmed",
+        );
+        currentWallet = solanaWeb3.Keypair.generate();
+        const publicKey = currentWallet.publicKey.toString();
+        const secretKey = Array.from(currentWallet.secretKey)
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("");
+        walletInfo.innerHTML = `
+            <p>Public Key: ${publicKey}</p>
+            <p>Secret Key: ${secretKey}</p>
+        `;
+        fundButton.style.display = "inline-flex";
+        syncButton.style.display = "inline-flex";
+        await updateBalance();
+      }
 
-            document.getElementById('fundButton').style.display = 'block';
-            await updateBalance();
+      async function updateBalance() {
+        if (!currentWallet) return;
+        const balance = await connection.getBalance(currentWallet.publicKey);
+        const balanceInSOL = balance / solanaWeb3.LAMPORTS_PER_SOL;
+        balanceInfo.innerHTML = `<h3>Current Balance: ${balanceInSOL.toFixed(4)} SOL</h3>`;
+      }
+
+      async function fundWallet() {
+        if (!currentWallet) {
+          alert("Please generate a wallet first");
+          return;
         }
+        fundSpinner.style.display = "block";
+        fundButton.disabled = true;
+        try {
+          const airdropSignature = await connection.requestAirdrop(
+            currentWallet.publicKey,
+            0.5 * solanaWeb3.LAMPORTS_PER_SOL,
+          );
+          await connection.confirmTransaction(airdropSignature);
+          alert("Wallet funded with 0.5 test SOL");
+          await updateBalance();
+          await addTransaction(airdropSignature, 0.5);
+        } catch (error) {
+          console.error("Error funding wallet:", error);
+          alert(`Error funding wallet due to ${error}`);
+        }
+        fundSpinner.style.display = "none";
+        fundButton.disabled = false;
+      }
 
-        async function fundWallet() {
-            if (!currentWallet) {
-                alert('Please generate a wallet first');
-                return;
+      async function addTransaction(signature, amount) {
+        const listItem = document.createElement("li");
+        listItem.textContent = `Received ${amount} SOL - Transaction Signature: ${signature}`;
+        transactionList.appendChild(listItem);
+      }
+
+      async function syncTransactionHistory() {
+        if (!currentWallet) {
+          alert("Please generate a wallet first");
+          return;
+        }
+        syncSpinner.style.display = "block";
+        syncButton.disabled = true;
+        try {
+          const transactions = await connection.getSignaturesForAddress(
+            currentWallet.publicKey,
+          );
+          transactionList.innerHTML = "";
+          for (let tx of transactions) {
+            const txInfo = await connection.getTransaction(tx.signature);
+            console.log(`Found ${txInfo}`);
+            if (txInfo) {
+              const amount =
+                txInfo.meta.postBalances[0] - txInfo.meta.preBalances[0];
+              const amountInSOL = amount / solanaWeb3.LAMPORTS_PER_SOL;
+              const listItem = document.createElement("li");
+              listItem.textContent = `Received ${amountInSOL.toFixed(4)} SOL - Signature: ${tx.signature}`;
+              transactionList.appendChild(listItem);
             }
-
-            try {
-                const airdropSignature = await connection.requestAirdrop(
-                    currentWallet.publicKey,
-                    2 * solanaWeb3.LAMPORTS_PER_SOL
-                );
-                await connection.confirmTransaction(airdropSignature);
-
-                alert('Wallet funded with 2 test SOL');
-                await updateBalance();
-                await addTransaction(airdropSignature, 2);
-            } catch (error) {
-                console.error('Error funding wallet:', error);
-                alert('Error funding wallet. Please try again.');
-            }
+          }
+          await updateBalance();
+        } catch (error) {
+          console.error("Error syncing transactions:", error);
+          alert("Error syncing transactions. Please try again.");
         }
-
-        async function updateBalance() {
-            if (!currentWallet) return;
-
-            const balance = await connection.getBalance(currentWallet.publicKey);
-            const balanceInSOL = balance / solanaWeb3.LAMPORTS_PER_SOL;
-            document.getElementById('balanceInfo').innerHTML = `
-                <h3>Current Balance: ${balanceInSOL.toFixed(4)} SOL</h3>
-            `;
-        }
-
-        async function addTransaction(signature, amount) {
-            const transactionList = document.getElementById('transactionList');
-            const listItem = document.createElement('li');
-            listItem.textContent = `Received ${amount} SOL - Transaction Signature: ${signature}`;
-            transactionList.appendChild(listItem);
-        }
+        syncSpinner.style.display = "none";
+        syncButton.disabled = false;
+      }
     </script>
-</body>
+  </body>
 </html>
