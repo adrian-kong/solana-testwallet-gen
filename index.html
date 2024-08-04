@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solana Testnet Wallet Generator</title>
+    <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
+</head>
+<body>
+    <h1>Solana Testnet Wallet Generator</h1>
+    <button onclick="generateAndDisplayWallet()">Generate New Testnet Wallet</button>
+    <div id="walletInfo"></div>
+    <button id="fundButton" style="display:none;" onclick="fundWallet()">Fund Wallet (2 SOL)</button>
+    <div id="balanceInfo"></div>
+    <h3>Transaction History:</h3>
+    <ul id="transactionList"></ul>
+
+    <script>
+        let currentWallet;
+        let connection;
+
+        async function generateAndDisplayWallet() {
+            connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl('testnet'), 'confirmed');
+            currentWallet = solanaWeb3.Keypair.generate();
+            const publicKey = currentWallet.publicKey.toString();
+            const secretKey = Array.from(currentWallet.secretKey)
+                .map(b => b.toString(16).padStart(2, '0'))
+                .join('');
+
+            document.getElementById('walletInfo').innerHTML = `
+                <p>Public Key: ${publicKey}</p>
+                <p>Secret Key: ${secretKey}</p>
+                <p>Network: Testnet</p>
+            `;
+
+            document.getElementById('fundButton').style.display = 'block';
+            await updateBalance();
+        }
+
+        async function fundWallet() {
+            if (!currentWallet) {
+                alert('Please generate a wallet first');
+                return;
+            }
+
+            try {
+                const airdropSignature = await connection.requestAirdrop(
+                    currentWallet.publicKey,
+                    2 * solanaWeb3.LAMPORTS_PER_SOL
+                );
+                await connection.confirmTransaction(airdropSignature);
+
+                alert('Wallet funded with 2 test SOL');
+                await updateBalance();
+                await addTransaction(airdropSignature, 2);
+            } catch (error) {
+                console.error('Error funding wallet:', error);
+                alert('Error funding wallet. Please try again.');
+            }
+        }
+
+        async function updateBalance() {
+            if (!currentWallet) return;
+
+            const balance = await connection.getBalance(currentWallet.publicKey);
+            const balanceInSOL = balance / solanaWeb3.LAMPORTS_PER_SOL;
+            document.getElementById('balanceInfo').innerHTML = `
+                <h3>Current Balance: ${balanceInSOL.toFixed(4)} SOL</h3>
+            `;
+        }
+
+        async function addTransaction(signature, amount) {
+            const transactionList = document.getElementById('transactionList');
+            const listItem = document.createElement('li');
+            listItem.textContent = `Received ${amount} SOL - Transaction Signature: ${signature}`;
+            transactionList.appendChild(listItem);
+        }
+    </script>
+</body>
+</html>
